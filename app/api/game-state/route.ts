@@ -17,6 +17,10 @@ export async function POST(request: NextRequest) {
   const state = await currentGame(); if (!state) return NextResponse.json({ error: "Could not read shared game" }, { status: 502 });
   const body = await request.json().catch(() => ({}));
   const index = Number(body.index);
+  if (body.action === "envelope-opened") {
+    if (state.pendingEnvelope !== index) return NextResponse.json({ error: "That envelope is not waiting" }, { status: 409 });
+    state.pendingEnvelope = null; await writeGame(state); return NextResponse.json(state);
+  }
   if (index !== state.current || index < 0 || index > 6) return NextResponse.json({ error: "That dare is not currently available" }, { status: 409 });
   const existing = state.submissions[index];
   if (body.action === "submit") {
@@ -42,10 +46,14 @@ export async function PATCH(request: NextRequest) {
   else if (body.action === "restore-question" && index >= 0 && index < 7) delete state.customQuestions[String(index)];
   else if (body.action === "title" && index >= 0 && index < 7) state.customTitles[String(index)] = String(body.value ?? "").slice(0, 120);
   else if (body.action === "restore-title" && index >= 0 && index < 7) delete state.customTitles[String(index)];
+  else if (body.action === "envelope" && index >= 0 && index < 7) {
+    const envelope = body.envelope ?? {};
+    state.envelopes[String(index)] = { text: String(envelope.text ?? "").slice(0, 4000) || undefined, image: typeof envelope.image === "string" && envelope.image.length < 2_500_000 ? envelope.image : undefined, imageName: String(envelope.imageName ?? "").slice(0, 200) || undefined };
+  }
   else if (["approved", "rejected"].includes(body.action) && index >= 0 && index < 7) {
     const status = body.action as "approved" | "rejected";
     state.submissions = state.submissions.map((item, i) => i === index ? { ...item, status, reviewedAt: new Date().toISOString() } : item);
-    if (status === "approved" && index === state.current) { const next = state.submissions.findIndex((item, i) => i > index && !["approved", "skipped"].includes(item.status)); if (next >= 0) { state.submissions[next].status = "available"; state.current = next; } }
+    if (status === "approved" && index === state.current) { state.pendingEnvelope = index; const next = state.submissions.findIndex((item, i) => i > index && !["approved", "skipped"].includes(item.status)); if (next >= 0) { state.submissions[next].status = "available"; state.current = next; } }
     if (status === "rejected") { state.current = index; state.screen = "game"; }
     if (approvedCount(state) >= 5) { state.machineUnlocked = true; state.screen = "unlock"; }
   } else return NextResponse.json({ error: "Invalid admin action" }, { status: 400 });

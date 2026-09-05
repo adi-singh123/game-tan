@@ -42,6 +42,7 @@ export default function Home() {
   const [skipConfirm, setSkipConfirm] = useState(false);
   const [eventIndex, setEventIndex] = useState<number | null>(null);
   const [machineAside, setMachineAside] = useState("");
+  const [envelopeOpen, setEnvelopeOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const remoteMode = useRef(false);
 
@@ -50,7 +51,7 @@ export default function Home() {
   useEffect(() => {
     if (!loaded) return;
     let stopped = false;
-    const syncRemote = async () => { try { const response = await fetch("/api/game-state", { cache: "no-store" }); if (!response.ok) return; const remote = normalizeState(await response.json()); remoteMode.current = true; if (!stopped) setState(current => ({ ...current, submissions: remote.submissions, current: remote.current, customQuestions: remote.customQuestions, customTitles: remote.customTitles, machineUnlocked: remote.machineUnlocked, screen: remote.machineUnlocked && remote.screen === "unlock" ? "unlock" : current.machineUnlocked && !remote.machineUnlocked && approvedCount(remote) === 0 ? "home" : current.screen })); } catch {} };
+    const syncRemote = async () => { try { const response = await fetch("/api/game-state", { cache: "no-store" }); if (!response.ok) return; const remote = normalizeState(await response.json()); remoteMode.current = true; if (!stopped) setState(current => ({ ...current, submissions: remote.submissions, current: remote.current, customQuestions: remote.customQuestions, customTitles: remote.customTitles, envelopes: remote.envelopes, pendingEnvelope: remote.pendingEnvelope, machineUnlocked: remote.machineUnlocked, screen: remote.machineUnlocked && remote.screen === "unlock" ? "unlock" : current.machineUnlocked && !remote.machineUnlocked && approvedCount(remote) === 0 ? "home" : current.screen })); } catch {} };
     syncRemote(); const timer = window.setInterval(syncRemote, 2000);
     return () => { stopped = true; window.clearInterval(timer); };
   }, [loaded]);
@@ -77,7 +78,7 @@ export default function Home() {
     const submissions = state.submissions.map((s, i) => i === state.current ? { ...s, status: "submitted" as const, answer: answer.trim() || undefined, choice: choice || undefined, photo: photo?.data, photoName: photo?.name, submittedAt: new Date().toISOString(), reviewedAt: undefined } : s);
     try {
       const response = await fetch("/api/game-state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "submit", index: state.current, answer: answer.trim(), choice, photo: photo?.data, photoName: photo?.name }) });
-      if (response.ok) { remoteMode.current = true; const remote = normalizeState(await response.json()); setState(current => ({ ...current, submissions: remote.submissions, current: remote.current, customQuestions: remote.customQuestions, customTitles: remote.customTitles, machineUnlocked: remote.machineUnlocked })); }
+      if (response.ok) { remoteMode.current = true; const remote = normalizeState(await response.json()); setState(current => ({ ...current, submissions: remote.submissions, current: remote.current, customQuestions: remote.customQuestions, customTitles: remote.customTitles, envelopes: remote.envelopes, pendingEnvelope: remote.pendingEnvelope, machineUnlocked: remote.machineUnlocked })); }
       else if (response.status === 503 && !remoteMode.current) setState({ ...state, submissions });
       else throw new Error();
     } catch { if (!remoteMode.current) setState({ ...state, submissions }); else { window.alert("The submission could not reach Aditya. Please check the internet and try again."); return; } }
@@ -85,7 +86,7 @@ export default function Home() {
   }
   async function skip() {
     const submissions = state.submissions.map((s, i) => i === state.current ? { ...s, status: "skipped" as const, submittedAt: new Date().toISOString() } : i === state.current + 1 && s.status === "locked" ? { ...s, status: "available" as const } : s);
-    try { const response = await fetch("/api/game-state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "skip", index: state.current }) }); if (response.ok) { remoteMode.current = true; const remote = normalizeState(await response.json()); setState(current => ({ ...current, submissions: remote.submissions, current: remote.current, customQuestions: remote.customQuestions, customTitles: remote.customTitles, machineUnlocked: remote.machineUnlocked })); } else if (response.status === 503 && !remoteMode.current) advance({ ...state, submissions }); else throw new Error(); }
+    try { const response = await fetch("/api/game-state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "skip", index: state.current }) }); if (response.ok) { remoteMode.current = true; const remote = normalizeState(await response.json()); setState(current => ({ ...current, submissions: remote.submissions, current: remote.current, customQuestions: remote.customQuestions, customTitles: remote.customTitles, envelopes: remote.envelopes, pendingEnvelope: remote.pendingEnvelope, machineUnlocked: remote.machineUnlocked })); } else if (response.status === 503 && !remoteMode.current) advance({ ...state, submissions }); else throw new Error(); }
     catch { if (!remoteMode.current) advance({ ...state, submissions }); else { window.alert("The skip could not be saved. Please check the internet and try again."); return; } }
     setAnswer(""); setChoice(""); setPhoto(null); setSkipConfirm(false);
   }
@@ -98,6 +99,11 @@ export default function Home() {
     const pulls = state.machinePulls + 1; const asides = ["Hmm…", "That was random.", "Okay, I didn’t expect that.", "You’re really enjoying this, aren’t you?", "Fine. One more."];
     setEventIndex(next); setMachineAside(pulls % 3 === 0 ? asides[Math.floor(pulls / 3) % asides.length] : ""); setState(s => ({ ...s, machinePulls: pulls }));
   }
+  async function finishEnvelope(index: number) {
+    if (remoteMode.current) { try { const response = await fetch("/api/game-state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "envelope-opened", index }) }); if (!response.ok) throw new Error(); const remote = normalizeState(await response.json()); setState(current => ({ ...current, submissions: remote.submissions, current: remote.current, envelopes: remote.envelopes, pendingEnvelope: null, machineUnlocked: remote.machineUnlocked, screen: remote.machineUnlocked && remote.screen === "unlock" ? "unlock" : "game" })); } catch { window.alert("The envelope could not close yet. Please check the internet and try again."); return; } }
+    else setState(current => ({ ...current, pendingEnvelope: null }));
+    setEnvelopeOpen(false);
+  }
 
   if (!loaded) return <Shell><div className="loading">Opening your invitation…</div></Shell>;
 
@@ -106,6 +112,11 @@ export default function Home() {
   if (state.screen === "rule") return <Shell footer={false} className="envelope-bg"><section className="letter reveal"><p className="eyebrow">A TINY RULE</p><h2>Okay Tannu…</h2><p>Before you enter, there’s just one tiny rule.</p><div className="rule-number">7</div><h1>DARES</h1><p>Complete <strong>any 5 out of 7.</strong><br />That’s all.</p><p className="note">And yes… you can skip 2.</p><Button onClick={() => go("intro")}>LET’S START</Button></section></Shell>;
 
   if (state.screen === "intro") return <Shell footer={false}><section className="center narrow reveal"><p className="eyebrow">THE WEEKEND GAME</p><h1>Welcome, Tannu.</h1><div className="copy"><p>I made 7 little challenges for you.</p><p>They’re not difficult.</p><p>Some are funny.<br />Some are slightly embarrassing.<br />Some require you to actually do something.</p><p>And one or two…<br />might make you think.</p></div><p className="note">You only need to complete five.</p><Button onClick={() => go("game")}>I’M READY</Button></section></Shell>;
+
+  if (state.pendingEnvelope !== null) {
+    const index = state.pendingEnvelope; const surprise = state.envelopes[String(index)] ?? {};
+    return <Shell footer={false} className="mystery-page"><section className="center narrow reveal"><p className="eyebrow">DARE {index + 1} APPROVED</p>{!envelopeOpen ? <><h1>A little something<br />is waiting.</h1><button className="sealed-envelope" onClick={() => setEnvelopeOpen(true)} aria-label="Open mystery envelope"><span>♥</span></button><p className="note large">This one is from Aditya.</p><Button onClick={() => setEnvelopeOpen(true)}>OPEN THE ENVELOPE</Button></> : <article className="opened-envelope reveal"><p className="eyebrow">A NOTE FOR TANNU</p>{surprise.image && <img src={surprise.image} alt="A surprise from Aditya" />}{surprise.text ? <p>{surprise.text}</p> : <p>You did it. And yes…<br />I’m smiling over here.</p>}<span className="envelope-signature">— Aditya</span><Button onClick={() => finishEnvelope(index)}>{state.machineUnlocked ? "SEE WHAT’S NEXT" : "UNLOCK THE NEXT DARE"}</Button></article>}</section></Shell>;
+  }
 
   if (state.screen === "unlock") return <Shell footer={false} className="quiet"><section className="center reveal"><p className="note large">Wait…</p><h1>You actually did it.</h1><div className="ornament">✦</div><div className="copy"><p>5 challenges.<br />7 opportunities.<br />And somehow you survived.</p><p>There’s something waiting for you.</p></div><Button onClick={() => setState(s => ({ ...s, screen: "machine", machineUnlocked: true }))}>OPEN WHAT’S NEXT</Button></section></Shell>;
 

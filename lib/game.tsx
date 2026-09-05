@@ -10,6 +10,12 @@ export type Submission = {
   reviewedAt?: string;
 };
 
+export type MysteryEnvelope = {
+  text?: string;
+  image?: string;
+  imageName?: string;
+};
+
 export type GameState = {
   screen: "home" | "busy" | "rule" | "intro" | "game" | "unlock" | "machine";
   current: number;
@@ -18,6 +24,8 @@ export type GameState = {
   machinePulls: number;
   customQuestions: Record<string, string>;
   customTitles: Record<string, string>;
+  envelopes: Record<string, MysteryEnvelope>;
+  pendingEnvelope: number | null;
 };
 
 export const STORAGE_KEY = "tannu-weekend-game-v1";
@@ -30,6 +38,8 @@ export const initialState: GameState = {
   machinePulls: 0,
   customQuestions: {},
   customTitles: {},
+  envelopes: {},
+  pendingEnvelope: null,
 };
 
 export const dares = [
@@ -57,5 +67,5 @@ export const completedCount = (state: GameState) => state.submissions.filter(s =
 export const skippedCount = (state: GameState) => state.submissions.filter(s => s.status === "skipped").length;
 
 export function normalizeState(saved: Partial<GameState>): GameState {
-  return { ...initialState, ...saved, submissions: saved.submissions?.length === 7 ? saved.submissions : initialState.submissions, customQuestions: saved.customQuestions ?? {}, customTitles: saved.customTitles ?? {} };
+  return { ...initialState, ...saved, submissions: saved.submissions?.length === 7 ? saved.submissions : initialState.submissions, customQuestions: saved.customQuestions ?? {}, customTitles: saved.customTitles ?? {}, envelopes: saved.envelopes ?? {}, pendingEnvelope: typeof saved.pendingEnvelope === "number" ? saved.pendingEnvelope : null };
 }
