@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { approvedCount, completedCount, dares, GameState, initialState, machineEvents, normalizeState, skippedCount, STORAGE_KEY } from "@/lib/game";
+import { approvedCount, dares, GameState, initialState, machineEvents, normalizeState, skippedCount, STORAGE_KEY } from "@/lib/game";
 
 const WHATSAPP_NUMBER = ""; // Add an international number, e.g. 9198XXXXXXXX, to open a specific chat.
 
@@ -52,7 +52,7 @@ export default function Home() {
     window.addEventListener("storage", sync); window.addEventListener("focus", sync); return () => { window.removeEventListener("storage", sync); window.removeEventListener("focus", sync); };
   }, [loaded]);
 
-  const done = completedCount(state), approved = approvedCount(state), skips = skippedCount(state);
+  const done = approvedCount(state), approved = approvedCount(state), skips = skippedCount(state);
   const dare = dares[state.current];
   const canSubmit = dare?.kind === "text" ? answer.trim().length > 1 : dare?.kind === "choice" ? Boolean(choice) : dare?.kind === "photo" ? Boolean(photo) : true;
   const progressText = useMemo(() => done === 0 ? "Your first challenge is waiting." : done === 4 ? "Four challenges down. One more and you’re through." : `You’ve survived ${done}.`, [done]);
@@ -60,14 +60,15 @@ export default function Home() {
   function go(screen: GameState["screen"]) { setState(s => ({ ...s, screen })); }
   function advance(nextState: GameState) {
     const next = nextState.submissions.findIndex((s, i) => i > state.current && ["available", "rejected"].includes(s.status));
-    if (completedCount(nextState) >= 5 || nextState.machineUnlocked) setState({ ...nextState, screen: "unlock" });
+    if (approvedCount(nextState) >= 5 || nextState.machineUnlocked) setState({ ...nextState, screen: "unlock" });
     else setState({ ...nextState, current: next >= 0 ? next : Math.min(state.current + 1, 6) });
     setAnswer(""); setChoice(""); setPhoto(null); setSkipConfirm(false);
   }
   function submit() {
     if (!canSubmit) return;
-    const submissions = state.submissions.map((s, i) => i === state.current ? { ...s, status: "submitted" as const, answer: answer.trim() || undefined, choice: choice || undefined, photo: photo?.data, photoName: photo?.name, submittedAt: new Date().toISOString() } : i === state.current + 1 && s.status === "locked" ? { ...s, status: "available" as const } : s);
-    advance({ ...state, submissions });
+    const submissions = state.submissions.map((s, i) => i === state.current ? { ...s, status: "submitted" as const, answer: answer.trim() || undefined, choice: choice || undefined, photo: photo?.data, photoName: photo?.name, submittedAt: new Date().toISOString(), reviewedAt: undefined } : s);
+    setState({ ...state, submissions });
+    setAnswer(""); setChoice(""); setPhoto(null); setSkipConfirm(false);
   }
   function skip() {
     const submissions = state.submissions.map((s, i) => i === state.current ? { ...s, status: "skipped" as const, submittedAt: new Date().toISOString() } : i === state.current + 1 && s.status === "locked" ? { ...s, status: "available" as const } : s);
@@ -98,7 +99,9 @@ export default function Home() {
     return <Shell footer={false} className="machine"><section className="center reveal"><p className="eyebrow">UNLOCKED</p><h1>DO SOMETHING</h1><p className="muted">You never know what you’re going to get.</p><div className={`machine-result ${event ? "has-result" : ""}`} aria-live="polite">{event ? <><p className="eyebrow">{event[0]}</p><h2>{event[1]}</h2></> : <span className="machine-star">✦</span>}</div>{machineAside && <p className="note aside">{machineAside}</p>}<Button onClick={pullMachine}>DO SOMETHING</Button><button className="text-button" onClick={() => go("game")}>look back at the dares</button></section></Shell>;
   }
 
-  if (state.screen === "game") return <Shell footer={false} className="game"><section className="challenge reveal" key={state.current}><header className="challenge-head"><div><p className="eyebrow">CHALLENGE {String(state.current + 1).padStart(2, "0")} / 07</p><p className="progress-dots" aria-label={`${done} challenges completed`}>{state.submissions.map((s, i) => <span className={["submitted", "approved"].includes(s.status) ? "filled" : s.status === "skipped" ? "skipped" : i === state.current ? "current" : ""} key={i}>●</span>)}</p></div><p className="survived">{progressText}</p></header><article className="dare-card"><p className="dare-no">DARE #{state.current + 1}</p><h1>{dare.title}</h1><div className="dare-copy">{dare.body}</div>{"prompt" in dare && dare.prompt && <p className="note prompt">{dare.prompt}</p>}
+  if (state.screen === "game" && state.submissions[state.current].status === "submitted") return <Shell footer={false} className="quiet"><section className="center narrow reveal" aria-live="polite"><p className="eyebrow">CHALLENGE {String(state.current + 1).padStart(2, "0")} SENT</p><h1>Waiting for Aditya.</h1><div className="ornament">✦</div><div className="copy"><p>Your answer is safely submitted.</p><p>The next dare stays hidden until Aditya approves this one.</p><p>You can leave this page open or come back later. It will update when the decision arrives.</p></div><p className="note large">No peeking at what comes next…</p></section></Shell>;
+
+  if (state.screen === "game") return <Shell footer={false} className="game"><section className="challenge reveal" key={state.current}><header className="challenge-head"><div><p className="eyebrow">CHALLENGE {String(state.current + 1).padStart(2, "0")} / 07</p><p className="progress-dots" aria-label={`${done} challenges approved`}>{state.submissions.map((s, i) => <span className={s.status === "approved" ? "filled" : s.status === "skipped" ? "skipped" : i === state.current ? "current" : ""} key={i}>●</span>)}</p></div><p className="survived">{progressText}</p></header><article className="dare-card">{state.submissions[state.current].status === "rejected" && <div className="rejected-note"><strong>Not approved yet.</strong><br />Aditya sent this dare back for another try.</div>}<p className="dare-no">DARE #{state.current + 1}</p><h1>{dare.title}</h1><div className={`dare-copy ${state.customQuestions[String(state.current)] ? "custom-question" : ""}`}>{state.customQuestions[String(state.current)] || dare.body}</div>{"prompt" in dare && dare.prompt && <p className="note prompt">{dare.prompt}</p>}
     {dare.kind === "text" && <textarea value={answer} onChange={e => setAnswer(e.target.value)} placeholder={dare.placeholder} rows={5} aria-label="Your answer" />}
     {dare.kind === "choice" && <div className="choices"><button className={choice === "A perfect planned date" ? "selected" : ""} onClick={() => setChoice("A perfect planned date")}><span>♥</span>A perfect planned date</button><i>or</i><button className={choice === "A completely unplanned adventure" ? "selected" : ""} onClick={() => setChoice("A completely unplanned adventure")}><span>☺</span>A completely unplanned adventure</button>{choice && <><p className="note">Interesting choice. I’m definitely remembering that.</p><input value={answer} onChange={e => setAnswer(e.target.value)} placeholder="Why did you choose it? (optional)" aria-label="Why did you choose it" /></>}</div>}
     {dare.kind === "photo" && <div className="photo-picker">{photo ? <><img src={photo.data} alt="Your chosen preview" /><p>{photo.name}</p><button className="text-button" onClick={() => inputRef.current?.click()}>choose a different photo</button></> : <button className="button" onClick={() => inputRef.current?.click()}>{dare.action}</button>}<input ref={inputRef} type="file" accept="image/*" onChange={selectPhoto} hidden /></div>}
