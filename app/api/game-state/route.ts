@@ -40,6 +40,8 @@ export async function PATCH(request: NextRequest) {
   if (body.action === "unlock") { state.machineUnlocked = true; state.screen = "unlock"; }
   else if (body.action === "question" && index >= 0 && index < 7) state.customQuestions[String(index)] = String(body.value ?? "").slice(0, 4000);
   else if (body.action === "restore-question" && index >= 0 && index < 7) delete state.customQuestions[String(index)];
+  else if (body.action === "title" && index >= 0 && index < 7) state.customTitles[String(index)] = String(body.value ?? "").slice(0, 120);
+  else if (body.action === "restore-title" && index >= 0 && index < 7) delete state.customTitles[String(index)];
   else if (["approved", "rejected"].includes(body.action) && index >= 0 && index < 7) {
     const status = body.action as "approved" | "rejected";
     state.submissions = state.submissions.map((item, i) => i === index ? { ...item, status, reviewedAt: new Date().toISOString() } : item);

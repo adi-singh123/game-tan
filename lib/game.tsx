@@ -17,6 +17,7 @@ export type GameState = {
   machineUnlocked: boolean;
   machinePulls: number;
   customQuestions: Record<string, string>;
+  customTitles: Record<string, string>;
 };
 
 export const STORAGE_KEY = "tannu-weekend-game-v1";
@@ -28,6 +29,7 @@ export const initialState: GameState = {
   machineUnlocked: false,
   machinePulls: 0,
   customQuestions: {},
+  customTitles: {},
 };
 
 export const dares = [
@@ -55,5 +57,5 @@ export const completedCount = (state: GameState) => state.submissions.filter(s =
 export const skippedCount = (state: GameState) => state.submissions.filter(s => s.status === "skipped").length;
 
 export function normalizeState(saved: Partial<GameState>): GameState {
-  return { ...initialState, ...saved, submissions: saved.submissions?.length === 7 ? saved.submissions : initialState.submissions, customQuestions: saved.customQuestions ?? {} };
+  return { ...initialState, ...saved, submissions: saved.submissions?.length === 7 ? saved.submissions : initialState.submissions, customQuestions: saved.customQuestions ?? {}, customTitles: saved.customTitles ?? {} };
 }
