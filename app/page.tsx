@@ -43,9 +43,17 @@ export default function Home() {
   const [eventIndex, setEventIndex] = useState<number | null>(null);
   const [machineAside, setMachineAside] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const remoteMode = useRef(false);
 
   useEffect(() => { try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { const saved = normalizeState(JSON.parse(raw)); setState(saved.machineUnlocked && saved.screen === "game" ? { ...saved, screen: "unlock" } : saved); } } catch {} setLoaded(true); }, []);
   useEffect(() => { if (loaded) localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }, [state, loaded]);
+  useEffect(() => {
+    if (!loaded) return;
+    let stopped = false;
+    const syncRemote = async () => { try { const response = await fetch("/api/game-state", { cache: "no-store" }); if (!response.ok) return; const remote = normalizeState(await response.json()); remoteMode.current = true; if (!stopped) setState(current => ({ ...current, submissions: remote.submissions, current: remote.current, customQuestions: remote.customQuestions, machineUnlocked: remote.machineUnlocked, screen: remote.machineUnlocked && remote.screen === "unlock" ? "unlock" : current.machineUnlocked && !remote.machineUnlocked && approvedCount(remote) === 0 ? "home" : current.screen })); } catch {} };
+    syncRemote(); const timer = window.setInterval(syncRemote, 2000);
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, [loaded]);
   useEffect(() => {
     if (!loaded) return;
     const sync = () => { try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { const saved = normalizeState(JSON.parse(raw)); setState(saved.machineUnlocked && saved.screen === "game" ? { ...saved, screen: "unlock" } : saved); } } catch {} };
@@ -64,15 +72,22 @@ export default function Home() {
     else setState({ ...nextState, current: next >= 0 ? next : Math.min(state.current + 1, 6) });
     setAnswer(""); setChoice(""); setPhoto(null); setSkipConfirm(false);
   }
-  function submit() {
+  async function submit() {
     if (!canSubmit) return;
     const submissions = state.submissions.map((s, i) => i === state.current ? { ...s, status: "submitted" as const, answer: answer.trim() || undefined, choice: choice || undefined, photo: photo?.data, photoName: photo?.name, submittedAt: new Date().toISOString(), reviewedAt: undefined } : s);
-    setState({ ...state, submissions });
+    try {
+      const response = await fetch("/api/game-state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "submit", index: state.current, answer: answer.trim(), choice, photo: photo?.data, photoName: photo?.name }) });
+      if (response.ok) { remoteMode.current = true; const remote = normalizeState(await response.json()); setState(current => ({ ...current, submissions: remote.submissions, current: remote.current, customQuestions: remote.customQuestions, machineUnlocked: remote.machineUnlocked })); }
+      else if (response.status === 503 && !remoteMode.current) setState({ ...state, submissions });
+      else throw new Error();
+    } catch { if (!remoteMode.current) setState({ ...state, submissions }); else { window.alert("The submission could not reach Aditya. Please check the internet and try again."); return; } }
     setAnswer(""); setChoice(""); setPhoto(null); setSkipConfirm(false);
   }
-  function skip() {
+  async function skip() {
     const submissions = state.submissions.map((s, i) => i === state.current ? { ...s, status: "skipped" as const, submittedAt: new Date().toISOString() } : i === state.current + 1 && s.status === "locked" ? { ...s, status: "available" as const } : s);
-    advance({ ...state, submissions });
+    try { const response = await fetch("/api/game-state", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "skip", index: state.current }) }); if (response.ok) { remoteMode.current = true; const remote = normalizeState(await response.json()); setState(current => ({ ...current, submissions: remote.submissions, current: remote.current, customQuestions: remote.customQuestions, machineUnlocked: remote.machineUnlocked })); } else if (response.status === 503 && !remoteMode.current) advance({ ...state, submissions }); else throw new Error(); }
+    catch { if (!remoteMode.current) advance({ ...state, submissions }); else { window.alert("The skip could not be saved. Please check the internet and try again."); return; } }
+    setAnswer(""); setChoice(""); setPhoto(null); setSkipConfirm(false);
   }
   async function selectPhoto(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;

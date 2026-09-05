@@ -12,15 +12,18 @@ export default function Admin() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [state, setState] = useState<GameState>(initialState);
+  const [shared, setShared] = useState(false);
 
   useEffect(() => {
-    const refresh = () => { try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) setState(normalizeState(JSON.parse(raw))); } catch {} };
-    refresh();
-    window.addEventListener("storage", refresh);
+    const refreshLocal = () => { try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) setState(normalizeState(JSON.parse(raw))); } catch {} };
+    const refreshRemote = async () => { try { const response = await fetch("/api/game-state", { cache: "no-store" }); if (response.ok) { setState(normalizeState(await response.json())); setShared(true); } } catch {} };
+    const refresh = () => { refreshLocal(); refreshRemote(); };
+    refresh(); const timer = window.setInterval(refreshRemote, 2000);
+    window.addEventListener("storage", refreshLocal);
     window.addEventListener("focus", refresh);
     const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
     document.addEventListener("visibilitychange", onVisible);
-    return () => { window.removeEventListener("storage", refresh); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", onVisible); };
+    return () => { window.clearInterval(timer); window.removeEventListener("storage", refreshLocal); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", onVisible); };
   }, []);
 
   function save(next: GameState) { setState(next); localStorage.setItem(STORAGE_KEY, JSON.stringify(next)); }
@@ -34,7 +37,13 @@ export default function Admin() {
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not sign in."); }
     finally { setLoading(false); }
   }
-  function review(index: number, status: "approved" | "rejected") {
+  async function adminAction(action: string, extra: Record<string, unknown> = {}) {
+    const response = await fetch("/api/game-state", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...extra }) });
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Shared update failed");
+    const remote = normalizeState(await response.json()); setState(remote); return remote;
+  }
+  async function review(index: number, status: "approved" | "rejected") {
+    if (shared) { try { await adminAction(status, { index }); } catch (reason) { window.alert(reason instanceof Error ? reason.message : "Approval failed"); } return; }
     let submissions = state.submissions.map((item, i) => i === index ? { ...item, status, reviewedAt: new Date().toISOString() } as Submission : item);
     let current = state.current;
     if (status === "approved" && index === state.current) {
@@ -45,9 +54,11 @@ export default function Admin() {
     const approved = submissions.filter(item => item.status === "approved").length;
     save({ ...state, submissions, current, screen: approved >= 5 ? "unlock" : "game", machineUnlocked: state.machineUnlocked || approved >= 5 });
   }
-  function changeQuestion(index: number, value: string) { save({ ...state, customQuestions: { ...state.customQuestions, [String(index)]: value } }); }
-  function restoreQuestion(index: number) { const customQuestions = { ...state.customQuestions }; delete customQuestions[String(index)]; save({ ...state, customQuestions }); }
-  function reset() { if (window.confirm("Reset Tannu’s entire game on this device? This cannot be undone.")) save(initialState); }
+  function changeQuestion(index: number, value: string) { setState(current => ({ ...current, customQuestions: { ...current.customQuestions, [String(index)]: value } })); }
+  async function commitQuestion(index: number) { if (shared) { try { await adminAction("question", { index, value: state.customQuestions[String(index)] ?? dares[index].editableText }); } catch (reason) { window.alert(reason instanceof Error ? reason.message : "Question update failed"); } } else save(state); }
+  async function restoreQuestion(index: number) { if (shared) { try { await adminAction("restore-question", { index }); } catch (reason) { window.alert(reason instanceof Error ? reason.message : "Restore failed"); } } else { const customQuestions = { ...state.customQuestions }; delete customQuestions[String(index)]; save({ ...state, customQuestions }); } }
+  async function reset() { if (!window.confirm("Reset Tannu’s entire game for every connected device? This cannot be undone.")) return; if (shared) { try { await adminAction("reset"); } catch (reason) { window.alert(reason instanceof Error ? reason.message : "Reset failed"); } } else save(initialState); }
+  async function unlock() { if (shared) { try { await adminAction("unlock"); } catch (reason) { window.alert(reason instanceof Error ? reason.message : "Unlock failed"); } } else save({ ...state, screen: "unlock", machineUnlocked: true }); }
 
   const approved = state.submissions.filter(item => item.status === "approved").length;
 
@@ -60,10 +71,11 @@ export default function Admin() {
   return <main className="admin-page"><section className="admin-shell">
     <header className="admin-header"><div><p className="eyebrow">PRIVATE · ADITYA ONLY</p><h1>Tannu’s Game</h1></div><a href="/">Open game ↗</a></header>
     <section className="admin-progress"><div><span>APPROVED</span><strong>{approved} <i>/ 7</i></strong></div><p>{approved >= 5 ? "The Random Machine is unlocked." : `${5 - approved} more approval${5 - approved === 1 ? "" : "s"} to unlock the surprise.`}</p></section>
-    <div className="admin-actions"><button onClick={() => save({ ...state, screen: "unlock", machineUnlocked: true })} disabled={state.machineUnlocked}>UNLOCK RANDOM MACHINE</button><button className="danger" onClick={reset}>RESET EVERYTHING</button></div>
+    <div className="connection-state"><span className={shared ? "online" : "local"}>●</span>{shared ? "Shared phone ↔ desktop connection is active" : "Local mode — add Supabase environment variables to connect devices"}</div>
+    <div className="admin-actions"><button onClick={unlock} disabled={state.machineUnlocked}>UNLOCK RANDOM MACHINE</button><button className="danger" onClick={reset}>RESET EVERYTHING</button></div>
     <section className="submission-list">{state.submissions.map((item, index) => <article className="submission" key={index}>
       <div className="submission-title"><div><span>CHALLENGE {String(index + 1).padStart(2, "0")}</span><h2>{labels[index]}</h2></div><b className={`status ${item.status}`}>{item.status}</b></div>
-      <div className="question-editor"><label htmlFor={`question-${index}`}>QUESTION SHOWN TO TANNU</label><textarea id={`question-${index}`} rows={5} value={state.customQuestions[String(index)] ?? dares[index].editableText} onChange={event => changeQuestion(index, event.target.value)} /><div><span>Changes save automatically.</span>{state.customQuestions[String(index)] !== undefined && <button onClick={() => restoreQuestion(index)}>RESTORE ORIGINAL</button>}</div></div>
+      <div className="question-editor"><label htmlFor={`question-${index}`}>QUESTION SHOWN TO TANNU</label><textarea id={`question-${index}`} rows={5} value={state.customQuestions[String(index)] ?? dares[index].editableText} onChange={event => changeQuestion(index, event.target.value)} onBlur={() => commitQuestion(index)} /><div><span>Changes save when you leave the text box.</span>{state.customQuestions[String(index)] !== undefined && <button onClick={() => restoreQuestion(index)}>RESTORE ORIGINAL</button>}</div></div>
       {item.answer && <div className="answer"><label>ANSWER</label><p>{item.answer}</p></div>}
       {item.choice && <div className="answer"><label>CHOICE</label><p>{item.choice}</p></div>}
       {item.photo && <div className="answer"><label>CHOSEN PHOTO · {item.photoName}</label><img src={item.photo} alt={`Submission for challenge ${index + 1}`} /></div>}
@@ -71,6 +83,6 @@ export default function Admin() {
       {["submitted", "rejected", "approved"].includes(item.status) && <div className="review-buttons"><button className="approve" onClick={() => review(index, "approved")}>APPROVE &amp; UNLOCK NEXT</button><button className="reject" onClick={() => review(index, "rejected")}>REJECT &amp; RETRY</button></div>}
     </article>)}</section>
     <button className="logout" onClick={() => setAuthed(false)}>Lock admin page</button>
-    <p className="local-note">Game progress and question edits sync on this browser and website address. Tannu waits after every submission until you approve or reject it here.</p>
+    <p className="local-note">When the shared connection is active, Tannu’s phone waits after every submission until you approve or reject it here on your desktop.</p>
   </section></main>;
 }
