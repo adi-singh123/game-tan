@@ -2,11 +2,11 @@ import "server-only";
 import { GameState, initialState, normalizeState } from "@/lib/game";
 
 const url = process.env.SUPABASE_URL;
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const key = process.env.SUPABASE_SECRET_KEY;
 export const remoteConfigured = Boolean(url && key);
 
 function headers(extra?: Record<string, string>) {
-  return { apikey: key!, Authorization: `Bearer ${key}`, "Content-Type": "application/json", ...extra };
+  return { apikey: key!, ...(key?.startsWith("eyJ") ? { Authorization: `Bearer ${key}` } : {}), "Content-Type": "application/json", ...extra };
 }
 
 export async function readGame(): Promise<GameState> {
