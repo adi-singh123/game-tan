@@ -4,6 +4,15 @@ import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { approvedCount, dares, GameState, initialState, machineEvents, normalizeState, skippedCount, STORAGE_KEY } from "@/lib/game";
 
 const WHATSAPP_NUMBER = ""; // Add an international number, e.g. 9198XXXXXXXX, to open a specific chat.
+const achievements = [
+  { name: "BRAVE HEART", line: "That took honesty. Consider this officially appreciated." },
+  { name: "MEMORY MAKER", line: "A brand-new little memory has entered the collection." },
+  { name: "CUTELY HONEST", line: "Truth delivered. Aditya survived—and probably smiled." },
+  { name: "DEEP THINKER", line: "You actually stopped and thought about this one." },
+  { name: "CHAOS SPECIALIST", line: "No context. No explanation. Beautifully executed." },
+  { name: "ADVENTURE DECIDER", line: "Choice recorded. Future Aditya is taking notes." },
+  { name: "DREAM KEEPER", line: "That idea now officially belongs in the someday vault." },
+] as const;
 
 function WeekendMark() {
   const [weekend, setWeekend] = useState<boolean | null>(null);
@@ -114,8 +123,8 @@ export default function Home() {
   if (state.screen === "intro") return <Shell footer={false}><section className="center narrow reveal"><p className="eyebrow">THE WEEKEND GAME</p><h1>Welcome, Tannu.</h1><div className="copy"><p>I made 7 little challenges for you.</p><p>They’re not difficult.</p><p>Some are funny.<br />Some are slightly embarrassing.<br />Some require you to actually do something.</p><p>And one or two…<br />might make you think.</p></div><p className="note">You only need to complete five.</p><Button onClick={() => go("game")}>I’M READY</Button></section></Shell>;
 
   if (state.pendingEnvelope !== null) {
-    const index = state.pendingEnvelope; const surprise = state.envelopes[String(index)] ?? {};
-    return <Shell footer={false} className="mystery-page"><section className="center narrow reveal"><p className="eyebrow">DARE {index + 1} APPROVED</p>{!envelopeOpen ? <><h1>A little something<br />is waiting.</h1><button className="sealed-envelope" onClick={() => setEnvelopeOpen(true)} aria-label="Open mystery envelope"><span>♥</span></button><p className="note large">This one is from Aditya.</p><Button onClick={() => setEnvelopeOpen(true)}>OPEN THE ENVELOPE</Button></> : <article className="opened-envelope reveal"><p className="eyebrow">A NOTE FOR TANNU</p>{surprise.image && <img src={surprise.image} alt="A surprise from Aditya" />}{surprise.text ? <p>{surprise.text}</p> : <p>You did it. And yes…<br />I’m smiling over here.</p>}<span className="envelope-signature">— Aditya</span><Button onClick={() => finishEnvelope(index)}>{state.machineUnlocked ? "SEE WHAT’S NEXT" : "UNLOCK THE NEXT DARE"}</Button></article>}</section></Shell>;
+    const index = state.pendingEnvelope; const surprise = state.envelopes[String(index)] ?? {}; const achievement = achievements[index];
+    return <Shell footer={false} className="mystery-page"><div className="paper-confetti" aria-hidden="true">{Array.from({ length: 12 }, (_, piece) => <i key={piece} />)}</div><section className="center narrow reveal"><p className="eyebrow">DARE {index + 1} APPROVED</p>{!envelopeOpen ? <><div className="achievement-stamp"><small>ACHIEVEMENT EARNED</small><strong>{achievement.name}</strong></div><p className="approval-line">{achievement.line}</p><h1>A little something<br />is waiting.</h1><button className="sealed-envelope" onClick={() => setEnvelopeOpen(true)} aria-label="Open mystery envelope"><span>♥</span></button><p className="note large">This one is from Aditya.</p><Button onClick={() => setEnvelopeOpen(true)}>OPEN THE ENVELOPE</Button></> : <article className="opened-envelope reveal"><p className="eyebrow">A NOTE FOR TANNU</p>{surprise.image && <img src={surprise.image} alt="A surprise from Aditya" />}{surprise.text ? <p>{surprise.text}</p> : <p>You did it. And yes…<br />I’m smiling over here.</p>}<span className="envelope-signature">— Aditya</span><div className="earned-receipt">✦ {achievement.name.toLowerCase()} unlocked</div><Button onClick={() => finishEnvelope(index)}>{state.machineUnlocked ? "SEE WHAT’S NEXT" : "UNLOCK THE NEXT DARE"}</Button></article>}</section></Shell>;
   }
 
   if (state.screen === "unlock") return <Shell footer={false} className="quiet"><section className="center reveal"><p className="note large">Wait…</p><h1>You actually did it.</h1><div className="ornament">✦</div><div className="copy"><p>5 challenges.<br />7 opportunities.<br />And somehow you survived.</p><p>There’s something waiting for you.</p></div><Button onClick={() => setState(s => ({ ...s, screen: "machine", machineUnlocked: true }))}>OPEN WHAT’S NEXT</Button></section></Shell>;
